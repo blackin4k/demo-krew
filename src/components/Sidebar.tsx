@@ -33,11 +33,9 @@ export const SidebarContent = ({ onNavigate, mode = 'desktop' }: { onNavigate?: 
     navigate('/auth');
   };
 
-  const handleClick = (to: string) => {
-    if (onNavigate) onNavigate();
-  };
-
-  const isGuest = !localStorage.getItem('token');
+  const { isAuthenticated, user } = useAuthStore();
+  // Treat as Guest if not auth OR if user data is missing (stale token case)
+  const isGuest = !isAuthenticated || !user;
 
   const navItems = [
     { to: '/', icon: Home, label: 'Home' },
@@ -51,8 +49,8 @@ export const SidebarContent = ({ onNavigate, mode = 'desktop' }: { onNavigate?: 
     { to: '/galaxy', icon: Orbit, label: 'Sonic Galaxy' },
   ].filter(item => {
     if (isGuest) {
-      // Guest: Only show Search, Home, Radio, Galaxy
-      return ['Search', 'Radio', 'Sonic Galaxy'].includes(item.label);
+      // Guest: Only show Home and Search (as requested)
+      return ['Home', 'Search'].includes(item.label);
     }
     if (mode === 'mobile') {
       // Hide Search, Library, and The Lab on mobile
@@ -207,31 +205,32 @@ export const SidebarContent = ({ onNavigate, mode = 'desktop' }: { onNavigate?: 
 
       <div className="flex-1" />
 
-      {/* Sign out */}
-      <div className="px-6 pb-6 space-y-2">
-        <NavLink
-          to="/capsule"
-          onClick={() => handleClick('/capsule')}
-          className={({ isActive }) => cn(
-            "w-full flex items-center px-4 py-2 rounded-lg transition-all duration-300 font-medium group",
-            isActive
-              ? "bg-indigo-500/20 text-indigo-300 shadow-[0_0_15px_rgba(99,102,241,0.3)]"
-              : "text-indigo-400/80 hover:text-indigo-300 hover:bg-indigo-500/10"
-          )}
-        >
-          <Sparkles className="h-4 w-4 mr-3" />
-          Your Capsule
-        </NavLink>
+      {!isGuest && (
+        <div className="px-6 pb-6 space-y-2">
+          <NavLink
+            to="/capsule"
+            onClick={() => handleClick('/capsule')}
+            className={({ isActive }) => cn(
+              "w-full flex items-center px-4 py-2 rounded-lg transition-all duration-300 font-medium group",
+              isActive
+                ? "bg-indigo-500/20 text-indigo-300 shadow-[0_0_15px_rgba(99,102,241,0.3)]"
+                : "text-indigo-400/80 hover:text-indigo-300 hover:bg-indigo-500/10"
+            )}
+          >
+            <Sparkles className="h-4 w-4 mr-3" />
+            Your Capsule
+          </NavLink>
 
-        <Button
-          variant="ghost"
-          onClick={handleLogout}
-          className="w-full justify-start text-muted-foreground hover:text-foreground pl-4"
-        >
-          <LogOut className="h-4 w-4 mr-3" />
-          Sign Out
-        </Button>
-      </div>
+          <Button
+            variant="ghost"
+            onClick={handleLogout}
+            className="w-full justify-start text-muted-foreground hover:text-foreground pl-4"
+          >
+            <LogOut className="h-4 w-4 mr-3" />
+            Sign Out
+          </Button>
+        </div>
+      )}
     </div>
   );
 };

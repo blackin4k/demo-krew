@@ -4,7 +4,7 @@ import { toast } from "sonner";
 
 
 // Production API URL
-const API_URL = 'https://api.kreewaux.xyz';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 const api = axios.create({
   baseURL: API_URL,
@@ -36,9 +36,25 @@ api.interceptors.response.use(
       });
     }
 
-    if (error.response?.status === 401) {
+    const status = error.response?.status;
+    if (status === 401 || status === 422) {
+      // CRITICAL: Clear both the raw token AND the Zustand persist storage
       localStorage.removeItem('token');
-      window.location.href = '/auth';
+      localStorage.removeItem('auth-storage'); // This kills the zombie session
+
+      // If 401 or 422 (Bad/Expired Token), retry request as guest (no token)
+      // This ensures public routes (like /songs) don't fail just because of a stale token.
+      if ((status === 401 || status === 422) && error.config && !error.config._retry) {
+        error.config._retry = true;
+        delete error.config.headers['Authorization'];
+        return api.request(error.config);
+      }
+
+      // If 401, we are likely unauthorized for this resource.
+      // Only reload if we are not already on public pages (to prevent loops)
+      if (window.location.pathname !== '/' && window.location.pathname !== '/auth') {
+        window.location.href = '/';
+      }
     }
     return Promise.reject(error);
   }

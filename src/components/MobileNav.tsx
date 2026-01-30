@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
+import { useAuthStore } from '@/stores/authStore';
 import { Home, Search, Library, Music2, Menu, ListMusic, Users, Radio, Upload, FlaskConical, Disc3, Orbit, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -13,7 +14,8 @@ import {
 const MobileNav = () => {
   const location = useLocation();
 
-  const isGuest = !localStorage.getItem('token');
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const isGuest = !isAuthenticated;
   const navItems = [
     { to: '/', icon: Home, label: 'Home' },
     { to: '/search', icon: Search, label: 'Search' },

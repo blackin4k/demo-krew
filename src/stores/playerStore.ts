@@ -446,10 +446,18 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
               set({ progress: audio.currentTime, duration: audio.duration || 0 });
 
               // --- GUEST MODE LIMIT CHECK ---
+              // Check token manually or use store check if available
+              // Force pause if no token found
               if (!localStorage.getItem('token') && audio.currentTime > 30) {
-                audio.pause();
-                toast.error("⏱️ Guest Preview Limit Reached. Sign up to hear the full track!", { duration: 5000 });
-                set({ isPlaying: false });
+                if (!audio.paused) {
+                  audio.pause();
+                  toast.error("⏱️ Guest Preview Limit Reached. Sign up to hear the full track!", { duration: 5000 });
+                  set({ isPlaying: false });
+                }
+                // Lock time to 30 so they can't scrub past
+                if (audio.currentTime > 30.5) {
+                  audio.currentTime = 30;
+                }
                 return;
               }
               // -----------------------------
@@ -554,8 +562,32 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     }
 
     try {
-      const response = await playerApi.play(song.id);
-      const data = response.data;
+      let data;
+      const token = localStorage.getItem('token');
+      let useBackend = !!token;
+
+      if (useBackend) {
+        try {
+          const res = await playerApi.play(song.id);
+          data = res.data;
+        } catch (err: any) {
+          // If Auth failed (401/422), fallback to Guest Mode immediately
+          if (err.response && (err.response.status === 401 || err.response.status === 422)) {
+            console.warn("Backend handshake failed (stale token), playing locally.");
+            useBackend = false;
+          } else {
+            throw err; // Real error (network, 500, etc)
+          }
+        }
+      }
+
+      if (!useBackend) {
+        // Guest / Fallback
+        data = {
+          audio: songsApi.stream(song.id),
+          cover: song.cover
+        };
+      }
 
       if (activeGain && oppositeGain) {
         activeGain.gain.setValueAtTime(1, ctx.currentTime);
@@ -727,52 +759,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     set({ isPlaying: true });
   },
 
-  next: async () => {
-    get().recordPlay();
 
-    // CRITICAL FIX: Maintain service during transition
-    // Set isLoadingNext and keep isPlaying true to prevent service termination
-    set({ isLoadingNext: true, isPlaying: true });
-
-    // Keep notification alive during fetch
-    if (Capacitor.isNativePlatform()) {
-      updateNativeControls(get(), false);
-    }
-
-    // 1. Check Local Queue First (Fastest)
-    const { queue } = get();
-    if (queue.length > 0) {
-      const nextSong = queue[0];
-      const newQueue = queue.slice(1);
-      set({ queue: newQueue });
-      // Update queue on backend async
-      playerApi.modifyQueue('remove', { index: 0 }).catch(() => { });
-      await get().playSong(nextSong);
-      return;
-    }
-
-    // 2. Fetch from API
-    try {
-      const res = await playerApi.next();
-      if (res.data.id) {
-        await get().playSong(res.data);
-      } else {
-        // No more songs, allow service to stop
-        set({ isLoadingNext: false, isPlaying: false });
-      }
-    } catch (e) {
-      console.error("Next failed", e);
-      set({ isLoadingNext: false, isPlaying: false });
-    }
-  },
-
-  prev: async () => {
-    get().recordPlay();
-    try {
-      const res = await playerApi.prev();
-      if (res.data.id) get().playSong(res.data);
-    } catch (e) { console.error("Prev failed", e); }
-  },
 
   seek: (time: number) => {
     const audio = get()._activeAudio === 'A' ? get()._audioA : get()._audioB;
@@ -807,18 +794,22 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   addToQueue: (song: Song) => {
     set((state) => ({ queue: [...state.queue, song] }));
-    playerApi.addToQueue(song.id).catch(() => { });
+    if (localStorage.getItem('token')) {
+      playerApi.addToQueue(song.id).catch(() => { });
+    }
   },
 
 
 
   recordPlay: async () => {
     const { currentSong } = get();
+    // Guest check
+    if (!localStorage.getItem('token')) return;
+
     if (currentSong) {
       playerApi.recordPlay(currentSong.id).catch((e) => {
         console.error("Record Play Failed", e);
-        const errMsg = e.response ? `Status ${e.response.status}` : `Err: ${e.message} ${JSON.stringify(e)}`;
-        toast.error(`Sync Fail: ${errMsg}`);
+        // Silent fail for guests
       });
     }
   },
@@ -828,9 +819,19 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       const res = await radioApi.song(seedSongId);
       const songs = res.data;
       if (!songs || songs.length === 0) return;
-      await playerApi.modifyQueue('clear', {});
+
+      const isGuest = !localStorage.getItem('token');
+
+      if (!isGuest) {
+        await playerApi.modifyQueue('clear', {});
+      }
+
       get().playSong(songs[0]);
-      for (const s of songs.slice(1)) await playerApi.addToQueue(s.id);
+
+      if (!isGuest) {
+        for (const s of songs.slice(1)) await playerApi.addToQueue(s.id);
+      }
+
       set({ queue: songs.slice(1) });
     } catch (e) { console.error(e); }
   },
@@ -941,6 +942,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       set({ lyrics: "Failed to connect to lyrics engine." });
     }
   },
+
   setShowLyrics: (show: boolean) => {
     set({ showLyrics: show });
     if (show && !get().lyrics) {
@@ -948,9 +950,58 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     }
   },
 
+  next: async () => {
+    // Client-side Next Logic
+    const { queue, currentSong, shuffle } = get();
+    let nextSong: Song | null = null;
 
+    const isGuest = !localStorage.getItem('token');
 
-  // ... (previous store code)
+    // 1. Try local queue first (Priority for everyone)
+    if (queue.length > 0) {
+      nextSong = queue[0];
+      set({ queue: queue.slice(1) });
+    }
+    // 2. If no queue, try backend for Auth Users
+    else if (!isGuest) {
+      try {
+        const res = await playerApi.next();
+        if (res.data && res.data.id) {
+          nextSong = { ...res.data, cover: res.data.cover || null, audio: res.data.audio };
+        }
+      } catch (e) {
+        console.warn("Backend next failed", e);
+      }
+    }
+
+    // 3. Play if found
+    if (nextSong) {
+      await get().playSong(nextSong);
+    } else {
+      // Stop if nothing next
+      set({ isPlaying: false });
+      toast.info("End of queue");
+    }
+  },
+
+  prev: async () => {
+    // Restart song if > 3s
+    const audio = get()._activeAudio === 'A' ? get()._audioA : get()._audioB;
+    if (audio && audio.currentTime > 3) {
+      audio.currentTime = 0;
+      return;
+    }
+
+    const isGuest = !localStorage.getItem('token');
+
+    if (!isGuest) {
+      try {
+        await playerApi.prev();
+      } catch (e) { console.warn("Backend prev failed", e); }
+    }
+    // Simple seek 0 for now
+    if (audio) audio.currentTime = 0;
+  },
 
   // Helper to update Media Session Metadata
   updateMediaSession: () => {

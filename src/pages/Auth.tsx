@@ -142,6 +142,16 @@ const Auth = () => {
             </Button>
           </form>
 
+          <div className="mt-4">
+            <Button
+              variant="outline"
+              className="w-full h-11 border-dashed border-primary/30 hover:bg-primary/5 hover:border-primary/50 text-muted-foreground hover:text-primary transition-all"
+              onClick={() => navigate('/')}
+            >
+              Continue as Guest
+            </Button>
+          </div>
+
           <div className="mt-6 text-center text-sm">
             <button
               type="button"

@@ -93,6 +93,7 @@ const App = () => (
           <Route path="/auth" element={<Auth />} />
 
           {/* PUBLIC ROUTES (Guest Mode) */}
+          <Route path="/" element={<AppLayout><Home /></AppLayout>} />
           <Route path="/search" element={<AppLayout><Search /></AppLayout>} />
           <Route path="/home" element={<AppLayout><Home /></AppLayout>} />
           <Route path="/genre/:genre" element={<AppLayout><GenrePage /></AppLayout>} />
@@ -104,14 +105,6 @@ const App = () => (
           <Route path="/galaxy" element={<AppLayout><SonicGalaxy /></AppLayout>} />
 
           {/* PROTECTED ROUTES (Requires Login) */}
-          <Route
-            path="/"
-            element={
-              <ProtectedRoute>
-                <AppLayout><Home /></AppLayout>
-              </ProtectedRoute>
-            }
-          />
           <Route
             path="/profile"
             element={

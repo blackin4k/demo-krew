@@ -4,6 +4,7 @@ import { Play, TrendingUp, Clock, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { User } from 'lucide-react';
 import { useUIStore } from '@/stores/uiStore';
+import { useAuthStore } from '@/stores/authStore';
 import SongCard from '@/components/SongCard';
 import { songsApi, libraryApi, browseApi, radioApi, API_URL } from '@/lib/api';
 import { Song, Genre } from '@/types/music';
@@ -23,6 +24,7 @@ const Home = () => {
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
   const { playSong } = usePlayerStore();
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -36,23 +38,25 @@ const Home = () => {
         setGenres(genresRes.data || []);
 
         // Fetch authenticated data
-        try {
-          const [recsRes, recentRes] = await Promise.all([
-            libraryApi.getRecommendations(),
-            libraryApi.getRecent(),
-          ]);
-          setRecommendations(recsRes.data || []);
-          setRecentlyPlayed(recentRes.data || []);
+        if (isAuthenticated) {
+          try {
+            const [recsRes, recentRes] = await Promise.all([
+              libraryApi.getRecommendations(),
+              libraryApi.getRecent(),
+            ]);
+            setRecommendations(recsRes.data || []);
+            setRecentlyPlayed(recentRes.data || []);
 
-          // Fetch 'Because You Listened' if recent exists
-          if (recentRes.data && recentRes.data.length > 0) {
-            const firstRecent = recentRes.data[0];
-            // Use radioApi or direct axios if not exported
-            const becauseRes = await radioApi.becauseYouListened(firstRecent.id);
-            setBecause(becauseRes.data || []);
+            // Fetch 'Because You Listened' if recent exists
+            if (recentRes.data && recentRes.data.length > 0) {
+              const firstRecent = recentRes.data[0];
+              // Use radioApi or direct axios if not exported
+              const becauseRes = await radioApi.becauseYouListened(firstRecent.id);
+              setBecause(becauseRes.data || []);
+            }
+          } catch {
+            // User might not be authenticated
           }
-        } catch {
-          // User might not be authenticated
         }
       } catch (error) {
         console.error('Failed to fetch data:', error);
@@ -129,7 +133,7 @@ const Home = () => {
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl md:text-2xl font-bold text-white">Jump back in</h2>
             </div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
               {recentlyPlayed.slice(0, 6).map((song, i) => (
                 <div key={`recent-${song.id}`} className="overflow-hidden">
                   <SongCard song={song} index={i} variant="list" compact />
@@ -174,8 +178,8 @@ const Home = () => {
         {genres.length > 0 && (
           <section>
             <h2 className="text-xl md:text-2xl font-bold text-white mb-4">Browse All</h2>
-            <div className="grid grid-cols-2 gap-3">
-              {genres.slice(0, 4).map((genre, i) => (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+              {genres.slice(0, 8).map((genre, i) => (
                 <motion.button
                   key={genre.genre}
                   whileTap={{ scale: 0.98 }}

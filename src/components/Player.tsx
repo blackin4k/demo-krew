@@ -260,7 +260,20 @@ export default function Player() {
     if (!isDragging) {
       setLocalProgress(progress)
     }
-  }, [progress, isDragging])
+
+    // Guest Mode: Limit to 30 seconds
+    if (progress > 30 && !localStorage.getItem('token')) {
+      if (isPlaying) {
+        togglePlay(); // Pause
+        toast.error("Sign up to listen to the full song! 🚀", {
+          action: {
+            label: "Sign Up",
+            onClick: () => window.location.href = '/auth'
+          }
+        });
+      }
+    }
+  }, [progress, isDragging, isPlaying])
 
   const handleSeek = (vals: number[]) => {
     setIsDragging(true)
@@ -323,6 +336,13 @@ export default function Player() {
 
   useEffect(() => {
     if (!currentSong) return
+
+    // Skip for guests to avoid 401 > Redirect loop
+    if (!localStorage.getItem('token')) {
+      setLiked(false);
+      return;
+    }
+
     api
       .get(`/songs/${currentSong.id}/liked`)
       .then(res => setLiked(res.data.liked))
@@ -450,8 +470,8 @@ export default function Player() {
             )}
           </AnimatePresence>
 
-          {/* CONTENT CONTAINER - Flex Column, No Scroll */}
-          <div className="relative z-20 flex flex-col h-full w-full px-6 pb-4 pt-safe">
+          {/* CONTENT CONTAINER - Flex Column, No Scroll, Centered on Desktop */}
+          <div className="relative z-20 flex flex-col h-full w-full max-w-2xl mx-auto px-6 pb-4 pt-safe">
 
             {/* 1. TOP BAR */}
             <div className="flex items-center justify-between h-16 shrink-0 mt-8 md:mt-0">
